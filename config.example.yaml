@@ -1,0 +1,12 @@
+borg:
+  repository: /srv/dev-disk-by-uuid-XXXX/backups/rpi-os
+  password_file: /appData/pi-backup/.borg-password
+  compression: lz4
+  excludes: [/proc, /sys, /dev, /tmp, /run, /mnt]
+  retention: { keep_daily: 7, keep_weekly: 4, keep_monthly: 3 }
+slack:
+  webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+prometheus:
+  pushgateway_url: "http://localhost:9091"
+  job: "pi_backup"
+  instance: "rpiX"
