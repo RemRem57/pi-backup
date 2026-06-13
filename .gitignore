@@ -4,3 +4,4 @@ __pycache__/
 .borg-password
 borg-key-backup.txt
 config.yaml
+/.idea/

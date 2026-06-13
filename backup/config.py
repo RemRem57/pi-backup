@@ -30,13 +30,26 @@ class PrometheusConfig(BaseModel):
     instance: str = "rpi5"
 
 
+class NextcloudConfig(BaseModel):
+    borg: BorgConfig                      # repo Borg dédié (≠ repo OS)
+    data_dir: str                         # datadir Nextcloud sur le RAID
+    db_password_file: str                 # fichier contenant le mot de passe DB
+    db_container: str = "nextcloud-db"
+    db_name: str = "nextcloud"
+    db_user: str = "nextcloud"
+    app_container: str = "nextcloud"
+    dump_dir: str = "/appdata/pi-backup/.nextcloud-dump"
+    prometheus_job: str = "nextcloud_backup"
+
+
 class Config(BaseModel):
     borg: BorgConfig
     slack: SlackConfig
     prometheus: PrometheusConfig
+    nextcloud: NextcloudConfig | None = None
 
     @classmethod
-    def from_yaml(cls, path: Path = Path("/appData/pi-backup/config.yaml")) -> "Config":
+    def from_yaml(cls, path: Path = Path("/appdata/pi-backup/config.yaml")) -> "Config":
         with open(path) as f:
             data = yaml.safe_load(f)
         return cls(**data)

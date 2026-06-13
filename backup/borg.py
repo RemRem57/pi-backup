@@ -46,19 +46,21 @@ class BorgBackup:
         logger.debug("Running: {}", " ".join(cmd))
         return subprocess.run(cmd, capture_output=True, text=True, env=self._env)
 
-    def backup(self, archive_name: str) -> BorgResult:
+    def backup(self, archive_name: str, paths: list[str] | None = None) -> BorgResult:
         start = time.monotonic()
 
         excludes: list[str] = []
         for path in self.config.excludes:
             excludes += ["--exclude", path]
 
+        targets = paths if paths else ["/"]
+
         proc = self._run(
             "create", "--stats",
             "--compression", self.config.compression,
             *excludes,
             f"::{archive_name}",
-            "/",
+            *targets,
         )
 
         duration = time.monotonic() - start

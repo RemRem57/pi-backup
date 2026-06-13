@@ -10,3 +10,21 @@ prometheus:
   pushgateway_url: "http://localhost:9091"
   job: "pi_backup"
   instance: "rpiX"
+
+# Optionnel : backup Nextcloud (commande `pi-backup nextcloud`)
+nextcloud:
+  borg:                       # repo Borg DÉDIÉ, différent du repo OS ci-dessus
+    repository: /srv/dev-disk-by-uuid-XXXX/backups/nextcloud-data
+    password_file: /appData/pi-backup/.nextcloud-borg-password
+    compression: zstd
+    excludes:
+      - '*/appdata_*/preview'   # miniatures régénérables (optionnel, gain de place)
+    retention: { keep_daily: 7, keep_weekly: 4, keep_monthly: 6 }
+  data_dir: /srv/dev-disk-by-uuid-XXXX/nextcloud/data
+  db_password_file: /appData/pi-backup/.nextcloud-db-password
+  db_container: nextcloud-db
+  db_name: nextcloud
+  db_user: nextcloud
+  app_container: nextcloud
+  dump_dir: /appData/pi-backup/.nextcloud-dump
+  prometheus_job: nextcloud_backup
