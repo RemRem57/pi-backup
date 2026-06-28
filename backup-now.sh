@@ -18,7 +18,7 @@ CONFIG="/appdata/pi-backup/config.yaml"
 PI_BACKUP="/appdata/pi-backup/.venv/bin/pi-backup"
 LOG="/var/log/pi-backup-triggered.log"
 LOCK="/var/lock/pi-backup.lock"
-HECK_SENTINEL="/appdata/pi-backup/.last-check"
+CHECK_SENTINEL="/appdata/pi-backup/.last-check"
 CHECK_INTERVAL_DAYS=7
 
 # Positionné à 1 dès que le HDD est confirmé monté, remis à 0 dès que l'umount est géré.
