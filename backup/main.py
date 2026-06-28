@@ -104,6 +104,13 @@ def run_nextcloud(config_path: Path = CONFIG_PATH) -> int:
     return 0 if result.success else 1
 
 
+def run_notify(config_path: Path, title: str, body: str, *, error: bool) -> int:
+    config = Config.from_yaml(config_path)
+    slack = SlackNotifier(config.slack)
+    slack.notify(title, body, error=error)
+    return 0
+
+
 def run_nextcloud_check(config_path: Path = CONFIG_PATH) -> int:
     config = Config.from_yaml(config_path)
     if config.nextcloud is None:
@@ -131,12 +138,18 @@ def cli() -> None:
     parser = argparse.ArgumentParser(description="Pi backup manager")
     parser.add_argument(
         "command",
-        choices=["backup", "check", "nextcloud", "nextcloud-check"],
+        choices=["backup", "check", "nextcloud", "nextcloud-check", "notify"],
         default="backup",
         nargs="?",
     )
     parser.add_argument("--config", type=Path, default=CONFIG_PATH)
+    parser.add_argument("--title", default="")
+    parser.add_argument("--body", default="")
+    parser.add_argument("--error", action="store_true")
     args = parser.parse_args()
+
+    if args.command == "notify":
+        sys.exit(run_notify(args.config, args.title, args.body, error=args.error))
 
     dispatch = {
         "backup": run_backup,

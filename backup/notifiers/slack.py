@@ -63,3 +63,7 @@ class SlackNotifier:
         self._send(COLORS["error"], "🚨 Intégrité repository compromise", [
             {"title": "Action", "value": "Vérifier le repo Borg manuellement", "short": False},
         ])
+
+    def notify(self, title: str, body: str, *, error: bool = False) -> None:
+        color = COLORS["error"] if error else COLORS["success"]
+        self._send(color, title, [{"title": "", "value": body, "short": False}])
