@@ -18,6 +18,8 @@ CONFIG="/appdata/pi-backup/config.yaml"
 PI_BACKUP="/appdata/pi-backup/.venv/bin/pi-backup"
 LOG="/var/log/pi-backup-triggered.log"
 LOCK="/var/lock/pi-backup.lock"
+HECK_SENTINEL="/appdata/pi-backup/.last-check"
+CHECK_INTERVAL_DAYS=7
 
 # Positionné à 1 dès que le HDD est confirmé monté, remis à 0 dès que l'umount est géré.
 # Le trap ne fait rien si 0 — évite les doubles notifications sur les exits normaux.
@@ -118,6 +120,43 @@ else
     log "ERREUR : Nextcloud backup échoué"
 fi
 
+# --- 4b. Check d'intégrité (si dû ET backups OK) ---
+check_done=0   # 0 = pas lancé, 1 = OK, 2 = échec
+if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 ]]; then
+    check_due=1
+    if [[ -f "$CHECK_SENTINEL" ]]; then
+        age_days=$(( ( $(date +%s) - $(stat -c %Y "$CHECK_SENTINEL") ) / 86400 ))
+        (( age_days < CHECK_INTERVAL_DAYS )) && check_due=0
+        log "Dernier check il y a ${age_days}j (seuil ${CHECK_INTERVAL_DAYS}j)."
+    else
+        log "Aucun check précédent enregistré — check dû."
+    fi
+
+    if [[ $check_due -eq 1 ]]; then
+        check_os_ok=0; check_nc_ok=0
+        log "Lancement de pi-backup check (OS)..."
+        if "$PI_BACKUP" check --config "$CONFIG" 2>&1 | tee -a "$LOG"; then
+            check_os_ok=1; log "Check OS : OK"
+        else
+            log "ERREUR : check OS échoué"
+        fi
+
+        log "Lancement de pi-backup nextcloud-check..."
+        if "$PI_BACKUP" nextcloud-check --config "$CONFIG" 2>&1 | tee -a "$LOG"; then
+            check_nc_ok=1; log "Check Nextcloud : OK"
+        else
+            log "ERREUR : check Nextcloud échoué"
+        fi
+
+        if [[ $check_os_ok -eq 1 && $check_nc_ok -eq 1 ]]; then
+            check_done=1
+            touch "$CHECK_SENTINEL"   # sentinel mis à jour SEULEMENT si tout OK
+        else
+            check_done=2
+        fi
+    fi
+fi
+
 # --- 5. Sync + démontage (toujours, même en cas d'échec backup) ---
 log "Sync..."
 sync
@@ -141,6 +180,17 @@ if [[ $umount_ok -eq 0 ]]; then
     slack_err "🚨 NE PAS débrancher le HDD" \
         "Démontage impossible après 5 tentatives. Le disque est encore monté — attendre et relancer : umount $MOUNT_POINT"
     exit 1
+fi
+
+# --- 5b. Notification dédiée du check (distincte du backup) ---
+if [[ $check_done -eq 1 ]]; then
+    slack_ok "🔍 Check intégrité OK" "Repos OS + Nextcloud vérifiés, archives saines."
+elif [[ $check_done -eq 2 ]]; then
+    cdetails=""
+    [[ ${check_os_ok:-0} -eq 0 ]] && cdetails+="Check OS ❌  "
+    [[ ${check_nc_ok:-0} -eq 0 ]] && cdetails+="Check Nextcloud ❌  "
+    cdetails+="Une archive peut être corrompue — à investiguer."
+    slack_err "🔍🚨 Check intégrité ÉCHOUÉ" "$cdetails"
 fi
 
 # --- 6. Notification finale ---
