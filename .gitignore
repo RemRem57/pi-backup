@@ -5,3 +5,11 @@ __pycache__/
 borg-key-backup.txt
 config.yaml
 /.idea/
+
+# Secrets Nextcloud backup
+.nextcloud-borg-password
+.nextcloud-db-password
+nextcloud-borg-key-backup.txt
+
+# Sentinel local (état runtime, pas du code)
+.last-check
