@@ -38,7 +38,11 @@ echo "═══ $(date -Is) — démarrage archive froide $([[ $DRY_RUN -eq 1 ]]
 
 notify() {
   [[ $DRY_RUN -eq 1 ]] && { echo "[DRY-RUN] notify: $1 — $2"; return; }
-  "$PIBACKUP" notify --title "$1" --body "$2" "${3:-}"
+  if [[ "${3:-}" == "--error" ]]; then
+    "$PIBACKUP" notify --title "$1" --body "$2" --error
+  else
+    "$PIBACKUP" notify --title "$1" --body "$2"
+  fi
 }
 on_error() {
   rm -rf "$TMP"
