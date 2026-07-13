@@ -11,7 +11,7 @@ from .notifiers.slack import SlackNotifier
 from .notifiers.prometheus import PrometheusNotifier
 
 
-CONFIG_PATH = Path("/appData/pi-backup/config.yaml")
+CONFIG_PATH = Path("/appdata/pi-backup/config.yaml")
 
 logger.remove()
 logger.add(sys.stdout, format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {message}")

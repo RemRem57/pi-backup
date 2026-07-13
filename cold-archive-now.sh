@@ -39,11 +39,12 @@ echo "═══ $(date -Is) — démarrage archive froide $([[ $DRY_RUN -eq 1 ]]
 notify() {
   [[ $DRY_RUN -eq 1 ]] && { echo "[DRY-RUN] notify: $1 — $2"; return; }
   if [[ "${3:-}" == "--error" ]]; then
-    "$PIBACKUP" notify --title "$1" --body "$2" --error
+    "$PIBACKUP" notify --config "${APPDATA}/config.yaml" --title "$1" --body "$2" --error
   else
-    "$PIBACKUP" notify --title "$1" --body "$2"
+    "$PIBACKUP" notify --config "${APPDATA}/config.yaml" --title "$1" --body "$2"
   fi
 }
+
 on_error() {
   rm -rf "$TMP"
   notify "❄️🚨 Archive froide OVH échouée" "Voir ${LOG} sur le Pi." --error
