@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup HDD au branchement (udev-triggered)
+# Attendre que le device soit réellement prêt avant de lancer le script
+After=dev-disk-by\x2duuid-686E\x2dB978.device
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup-now
+# Laisse au noyau le temps de finir d'énumérer la partition avant le mount
+ExecStartPre=/bin/sleep 3
