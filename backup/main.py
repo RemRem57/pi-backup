@@ -9,6 +9,7 @@ from .borg import BorgBackup, BorgResult
 from .nextcloud import NextcloudDumper
 from .notifiers.slack import SlackNotifier
 from .notifiers.prometheus import PrometheusNotifier
+from .resolve import ResolveDumper
 
 
 CONFIG_PATH = Path("/appdata/pi-backup/config.yaml")
@@ -131,6 +132,65 @@ def run_nextcloud_check(config_path: Path = CONFIG_PATH) -> int:
 
     return 0 if ok else 1
 
+def run_resolve(config_path: Path = CONFIG_PATH) -> int:
+    config = Config.from_yaml(config_path)
+    if config.resolve is None:
+        logger.error("Section 'resolve' absente de la config")
+        return 2
+
+    rs    = config.resolve
+    borg  = BorgBackup(rs.borg)
+    slack = SlackNotifier(config.slack)
+    prom  = PrometheusNotifier(config.prometheus.model_copy(update={"job": rs.prometheus_job}))
+    dumper = ResolveDumper(rs)
+
+    archive_name = f"resolve-{datetime.now():%Y%m%d-%H%M%S}"
+
+    logger.info("Starting Resolve backup: {}", archive_name)
+    slack.backup_started(archive_name)
+
+    try:
+        paths = dumper.prepare()
+        result = borg.backup(archive_name, paths=paths)
+        if result.success:
+            logger.info("Pruning old snapshots...")
+            borg.prune()
+    except Exception as e:
+        logger.error("Resolve backup error: {}", e)
+        result = BorgResult(False, 0.0, archive_name, error=str(e))
+    finally:
+        dumper.cleanup()
+
+    if result.success:
+        slack.backup_success(result)
+        logger.info("Done in {:.0f}s", result.duration)
+    else:
+        slack.backup_failed(result)
+        logger.error("Failed")
+
+    prom.push(result)
+    return 0 if result.success else 1
+
+
+def run_resolve_check(config_path: Path = CONFIG_PATH) -> int:
+    config = Config.from_yaml(config_path)
+    if config.resolve is None:
+        logger.error("Section 'resolve' absente de la config")
+        return 2
+
+    borg  = BorgBackup(config.resolve.borg)
+    slack = SlackNotifier(config.slack)
+
+    logger.info("Running Resolve integrity check...")
+    ok = borg.check()
+
+    if ok:
+        logger.info("Repository integrity OK")
+    else:
+        logger.error("Integrity check FAILED")
+        slack.check_failed()
+
+    return 0 if ok else 1
 
 def cli() -> None:
     import argparse
@@ -138,7 +198,7 @@ def cli() -> None:
     parser = argparse.ArgumentParser(description="Pi backup manager")
     parser.add_argument(
         "command",
-        choices=["backup", "check", "nextcloud", "nextcloud-check", "notify"],
+        choices=["backup", "check", "nextcloud", "nextcloud-check", "resolve", "resolve-check", "notify"],
         default="backup",
         nargs="?",
     )
@@ -156,6 +216,8 @@ def cli() -> None:
         "check": run_check,
         "nextcloud": run_nextcloud,
         "nextcloud-check": run_nextcloud_check,
+        "resolve": run_resolve,
+        "resolve-check": run_resolve_check,
     }
     sys.exit(dispatch[args.command](args.config))
 

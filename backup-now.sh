@@ -103,6 +103,7 @@ trap_active=1
 # --- 4. Backups ---
 backup_ok=0
 nextcloud_ok=0
+resolve_ok=0
 
 log "Lancement de pi-backup backup..."
 if "$PI_BACKUP" backup --config "$CONFIG" 2>&1 | tee -a "$LOG"; then
@@ -120,9 +121,17 @@ else
     log "ERREUR : Nextcloud backup échoué"
 fi
 
+log "Lancement de pi-backup resolve..."
+if "$PI_BACKUP" resolve --config "$CONFIG" 2>&1 | tee -a "$LOG"; then
+    resolve_ok=1
+    log "Resolve backup : OK"
+else
+    log "ERREUR : Resolve backup échoué"
+fi
+
 # --- 4b. Check d'intégrité (si dû ET backups OK) ---
 check_done=0   # 0 = pas lancé, 1 = OK, 2 = échec
-if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 ]]; then
+if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 && $resolve_ok -eq 1 ]]; then
     check_due=1
     if [[ -f "$CHECK_SENTINEL" ]]; then
         age_days=$(( ( $(date +%s) - $(stat -c %Y "$CHECK_SENTINEL") ) / 86400 ))
@@ -148,7 +157,14 @@ if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 ]]; then
             log "ERREUR : check Nextcloud échoué"
         fi
 
-        if [[ $check_os_ok -eq 1 && $check_nc_ok -eq 1 ]]; then
+        log "Lancement de pi-backup resolve-check..."
+        if "$PI_BACKUP" resolve-check --config "$CONFIG" 2>&1 | tee -a "$LOG"; then
+            check_rs_ok=1; log "Check Resolve : OK"
+        else
+            log "ERREUR : check Resolve échoué"
+        fi
+
+        if [[ $check_os_ok -eq 1 && $check_nc_ok -eq 1 && $check_rs_ok -eq 1 ]]; then
             check_done=1
             touch "$CHECK_SENTINEL"   # sentinel mis à jour SEULEMENT si tout OK
         else
@@ -184,26 +200,28 @@ fi
 
 # --- 5b. Notification dédiée du check (distincte du backup) ---
 if [[ $check_done -eq 1 ]]; then
-    slack_ok "🔍 Check intégrité OK" "Repos OS + Nextcloud vérifiés, archives saines."
+    slack_ok "🔍 Check intégrité OK" "Repos OS + Nextcloud + Resolve vérifiés, archives saines."
 elif [[ $check_done -eq 2 ]]; then
     cdetails=""
     [[ ${check_os_ok:-0} -eq 0 ]] && cdetails+="Check OS ❌  "
     [[ ${check_nc_ok:-0} -eq 0 ]] && cdetails+="Check Nextcloud ❌  "
+    [[ ${check_rs_ok:-0} -eq 0 ]] && cdetails+="Check Resolve ❌  "
     cdetails+="Une archive peut être corrompue — à investiguer."
     slack_err "🔍🚨 Check intégrité ÉCHOUÉ" "$cdetails"
 fi
 
 # --- 6. Notification finale ---
-if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 ]]; then
+if [[ $backup_ok -eq 1 && $nextcloud_ok -eq 1 && $resolve_ok -eq 1 ]]; then
     log "Tous les backups réussis."
     slack_ok "🔌 RETRAIT OK — tu peux débrancher" \
-        "OS ✅  Nextcloud ✅  HDD démonté proprement."
+        "OS ✅  Nextcloud ✅  Resolve ✅  HDD démonté proprement."
     log "=== backup-now terminé avec succès ==="
     exit 0
 else
     details=""
     [[ $backup_ok -eq 0 ]]    && details+="OS backup ❌  "
     [[ $nextcloud_ok -eq 0 ]] && details+="Nextcloud ❌  "
+    [[ $resolve_ok -eq 0 ]]   && details+="Resolve ❌  "
     details+="HDD démonté proprement."
     log "Un ou plusieurs backups ont échoué."
     slack_err "❌ Backup(s) échoué(s) — HDD démonté" "$details"

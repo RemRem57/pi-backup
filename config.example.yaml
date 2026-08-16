@@ -28,3 +28,15 @@ nextcloud:
   app_container: nextcloud
   dump_dir: /appData/pi-backup/.nextcloud-dump
   prometheus_job: nextcloud_backup
+
+resolve:
+  borg:
+    repository: /srv/dev-disk-by-uuid-XXXX/backups/resolve-data
+    password_file: /appdata/pi-backup/.resolve-borg-password
+    compression: zstd
+    retention: { keep_daily: 3, keep_weekly: 2, keep_monthly: 1 }
+  postgres_container: resolve-postgres
+  postgres_user: postg
+  db_password_file: /appdata/pi-backup/.resolve-db-password   # si le container exige un mdp
+  dump_dir: /appdata/pi-backup/.resolve-dump
+  prometheus_job: resolve_backup

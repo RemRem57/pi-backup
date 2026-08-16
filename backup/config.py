@@ -41,12 +41,20 @@ class NextcloudConfig(BaseModel):
     dump_dir: str = "/appdata/pi-backup/.nextcloud-dump"
     prometheus_job: str = "nextcloud_backup"
 
+class ResolveConfig(BaseModel):
+    borg: BorgConfig                          # repo Borg dédié (≠ repo OS, ≠ repo nextcloud)
+    postgres_container: str = "resolve-postgres"
+    postgres_user: str = "postgres"
+    db_password_file: str | None = None       # optionnel si pg_hba trust en local
+    dump_dir: str = "/appdata/pi-backup/.resolve-dump"
+    prometheus_job: str = "resolve_backup"
 
 class Config(BaseModel):
     borg: BorgConfig
     slack: SlackConfig
     prometheus: PrometheusConfig
     nextcloud: NextcloudConfig | None = None
+    resolve: ResolveConfig | None = None
 
     @classmethod
     def from_yaml(cls, path: Path = Path("/appdata/pi-backup/config.yaml")) -> "Config":

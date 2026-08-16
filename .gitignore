@@ -13,3 +13,8 @@ nextcloud-borg-key-backup.txt
 
 # Sentinel local (état runtime, pas du code)
 .last-check
+
+# Secrets Resolve backup
+.resolve-borg-password
+.resolve-db-password
+resolve-borg-key-backup.txt
