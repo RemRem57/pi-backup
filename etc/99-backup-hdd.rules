@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_FS_UUID}=="686E-B978", TAG+="systemd", ENV{SYSTEMD_WANTS}+="backup-hdd.service"
