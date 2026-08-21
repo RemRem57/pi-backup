@@ -7,35 +7,26 @@
 # (prise Tapo), et ce script garantit qu'au moment où on coupe, plus rien de
 # critique n'est en cours.
 #
+# Ce script n'arrête PAS Docker : systemd le fait déjà en éteignant
+# docker.service, ce qui couvre automatiquement toute stack ajoutée plus tard.
+# Le seul réglage nécessaire est le délai laissé aux conteneurs, à mettre une
+# fois pour toutes dans /etc/docker/daemon.json :
+#
+#     { "shutdown-timeout": 60 }
+#
+# (défaut : 15 s, trop court pour MariaDB/PostgreSQL — à garder sous les 90 s
+#  du TimeoutStopSec de docker.service)
+#
 # Usage :
-#   sudo nas-halt.sh              # vérifie, arrête, éteint
-#   sudo nas-halt.sh --check      # vérifie seulement, n'éteint rien
-#   sudo nas-halt.sh --force      # ignore les verrous (à utiliser en connaissance de cause)
+#   sudo nas-halt.sh              # vérifie puis éteint
+#   sudo nas-halt.sh --check      # vérifie seulement
+#   sudo nas-halt.sh --force      # ignore les verrous, en connaissance de cause
 #
 set -euo pipefail
 
-# ---------------------------------------------------------------- configuration
+NOTIFY_CMD="pi-backup notify"   # laisser vide pour désactiver
 
-# Répertoires des stacks Docker, dans l'ordre d'arrêt souhaité.
-# La supervision en dernier : elle continue d'observer les autres qui tombent.
-COMPOSE_DIRS=(
-  /docker-compose/nextcloud
-  /docker-compose/exporters
-  /docker-compose/monitoring
-)
-
-# Délai laissé à chaque conteneur pour s'arrêter de lui-même avant SIGKILL.
-# Le défaut Docker est de 10 s : trop court pour MariaDB et PostgreSQL sous
-# charge, et un SIGKILL sur une base = recovery au prochain démarrage.
-STOP_TIMEOUT=60
-
-# Point de montage du HDD de backup (présent seulement quand il est branché).
-HDD_MOUNT=/srv/dev-disk-by-uuid-686E-B978
-
-# Commande de notification Slack (laisser vide pour désactiver).
-NOTIFY_CMD="pi-backup notify"
-
-# ---------------------------------------------------------------------- helpers
+# ---------------------------------------------------------------------- setup
 
 CHECK_ONLY=0
 FORCE=0
@@ -56,19 +47,14 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$1"; }
 die()  { printf '  \033[31m✗\033[0m %s\n' "$1" >&2; BLOCKED=1; }
 
-notify() {
-  [[ -n "$NOTIFY_CMD" ]] || return 0
-  $NOTIFY_CMD "$1" >/dev/null 2>&1 || true
-}
-
 BLOCKED=0
 
-# ------------------------------------------------------------------ vérifications
+# --------------------------------------------------------------- vérifications
 
 echo "Vérifications avant arrêt"
 
-# 1. Borg. Couper pendant une sauvegarde laisse le dépôt verrouillé, et la
-#    prochaine exécution refusera de démarrer tant que le lock n'est pas cassé.
+# Borg : couper pendant une sauvegarde laisse le dépôt verrouillé, et la
+# prochaine exécution refusera de démarrer tant que le lock n'est pas cassé.
 if pgrep -x borg >/dev/null 2>&1; then
   die "une sauvegarde Borg est en cours"
 else
@@ -81,29 +67,27 @@ else
   ok "backup-hdd.service inactif"
 fi
 
-# 2. RAID. Le bitmap d'intention d'écriture rend la coupure non destructive,
-#    mais un scrub interrompu repart de zéro : autant attendre qu'il finisse.
+# RAID : le bitmap d'intention d'écriture rend la coupure non destructive,
+# mais un scrub interrompu repart de zéro — autant le laisser finir.
 for f in /sys/block/md*/md/sync_action; do
   [[ -e "$f" ]] || continue
   action=$(<"$f")
   dev=$(basename "$(dirname "$(dirname "$f")")")
   if [[ "$action" != "idle" ]]; then
-    die "$dev est en '$action' (scrub ou reconstruction en cours)"
+    die "$dev est en '$action'"
   else
     ok "$dev au repos"
   fi
 done
 
-# 3. État du tableau : si un disque manque déjà, mieux vaut le savoir avant
-#    de couper que de le découvrir au redémarrage.
+# Tableau dégradé : mieux vaut le savoir maintenant qu'au redémarrage.
 if grep -q '_' /proc/mdstat 2>/dev/null; then
-  warn "le tableau RAID est dégradé — vérifie /proc/mdstat avant de couper"
+  warn "le tableau RAID est dégradé — vérifie /proc/mdstat"
 fi
 
 if [[ $BLOCKED -eq 1 && $FORCE -eq 0 ]]; then
   echo
-  echo "Arrêt annulé. Relance quand les opérations ci-dessus sont terminées," >&2
-  echo "ou force avec --force si tu sais ce que tu fais." >&2
+  echo "Arrêt annulé. Relance quand c'est terminé, ou --force." >&2
   exit 1
 fi
 
@@ -113,37 +97,18 @@ if [[ $CHECK_ONLY -eq 1 ]]; then
   exit 0
 fi
 
-# ------------------------------------------------------------------------ arrêt
+# --------------------------------------------------------------------- arrêt
 
-echo
-echo "Arrêt des services"
-
-notify "NAS : arrêt propre demandé, extinction en cours"
-
-for dir in "${COMPOSE_DIRS[@]}"; do
-  if [[ -d "$dir" ]]; then
-    echo "  → $dir"
-    docker compose --project-directory "$dir" down --timeout "$STOP_TIMEOUT" || \
-      warn "l'arrêt de $dir a retourné une erreur — on continue"
-  else
-    warn "$dir introuvable, ignoré"
-  fi
-done
-
-# Démontage du HDD de backup s'il est encore branché.
-if findmnt -rn "$HDD_MOUNT" >/dev/null 2>&1; then
-  echo "  → démontage $HDD_MOUNT"
-  umount "$HDD_MOUNT" || warn "démontage impossible — systemd s'en chargera"
-fi
+[[ -n "$NOTIFY_CMD" ]] && $NOTIFY_CMD "NAS : arrêt propre, extinction en cours" >/dev/null 2>&1 || true
 
 sync
 
 echo
-echo "Extinction. Le noyau vide les caches et met les disques en veille."
+echo "Extinction en cours."
 echo
 echo "  Attends que la conso de la prise chute et se stabilise, PUIS coupe."
 echo "  Les LED bleues des SSD resteront allumées : c'est normal, le HAT"
-echo "  reste alimenté. Ce n'est pas un signe que l'arrêt n'est pas terminé."
+echo "  reste alimenté. Ce n'est pas un signe que l'arrêt n'est pas fini."
 echo
 
 sleep 2
